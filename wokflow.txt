@@ -1,0 +1,9 @@
+so im planning to get a user input passed to the supervisor 
+1)input was analyzed and passed to the research agent to clarify the purpose of the trip,duration,no of accompanies,departure from ,prefered destination - if any of these details were missing , this research agent has to ask the user until all the doubts were clarified then pass it to the supervisor agent.
+2)after receiving the research agent output - supervisor then decides to check the weather of the destination and passes the destination to the weather agent to get the weather data for one full week and stores it
+3)then the supervisor sends the departure and destination details to check the flights available to the flight agent,and asks the user for the available flights ,then the user selects the flight time and the agent books the flight with given details.
+4)after the flight been booked the supervisor then request the accomodation agent to arrange the nearby hotel and travel options ,once the supervisor gathers the accomodation.
+5)then the supervisor send the details to the activities planner to give available activities with approximate budget.then supervisor gather the activities and asks the  user for the budget and reviews if they say ok then , fine.
+6)gathers all the data and send s it to the summarizer agent to summarize the plan and generates an itinerary.
+
+tech stack, langchain,langgraph,multiagent supervisor,human in loop,dockerize deploy , 
