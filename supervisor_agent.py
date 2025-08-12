@@ -1,4 +1,3 @@
-# supervisor_agent.py
 from research_agent import run_research_agent
 
 def supervisor_loop():
