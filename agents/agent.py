@@ -3,17 +3,18 @@ from langgraph.types import Command
 from langgraph.graph.message import add_messages
 from typing_extensions import TypedDict, Annotated
 from langchain_core.prompts.chat import ChatPromptTemplate
-from langgraph.graph import START, StateGraph, END
+from langgraph.graph import END
 from langgraph.prebuilt import create_react_agent
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 from utils.llm_config import LLMModel
 from Tools.toolkit import *
-from Prompt_template.prompts import supervisor_prompt,research_prompt
+from Prompt_template.prompts import *
 from typing import Any, TypedDict
 from typing_extensions import Annotated
 from langgraph.graph.message import add_messages
-import json,re
+import json,re,unicodedata
 from copy import deepcopy
+
 
 class Router(TypedDict):
     next: Literal["research_node","weather_node", "flight_node","hotel_node","activities_node","itirnerary_node",END]
@@ -125,3 +126,110 @@ class TripPlannerAgent:
     },
     goto="supervisor",
 )
+    
+
+
+    def weather_node(self,state:AgentState) -> Command[Literal['supervisor']]:
+        print("*****************called research node************")
+
+        state_json = json.dumps(state, default=str, ensure_ascii=False).replace("{", "{{").replace("}", "}}")
+                       
+        system_prompt = ChatPromptTemplate.from_messages(
+        [
+            (
+                "system",
+                f"Current full state (as JSON dict for reference): {state_json}\n\n" + weather_prompt
+            ),
+            (
+                "user",
+                "{messages}"  
+            ),
+        ]
+    )
+        
+        last_five = state["messages"][-5:] if len(state["messages"]) > 5 else state["messages"]
+
+        weather_agent = create_react_agent(model=self.llm_model,tools=[get_weather] ,prompt=system_prompt)
+        
+        result = weather_agent.invoke({
+        "messages": last_five
+    })
+        raw_text = result["messages"][-1].content
+
+        # Normalize Unicode & strip control chars
+        clean_text = unicodedata.normalize("NFKC", raw_text)
+        clean_text = clean_text.replace("\u202f", " ").strip()
+        clean_text = re.sub(r"[^\x20-\x7E°]+", " ", clean_text)
+        
+        return Command(
+    update={
+        "messages": state["messages"] + [
+            AIMessage(
+                content=clean_text,
+                name="weather_node"
+            )
+        ],
+        "weather": clean_text 
+    },
+    goto="supervisor",
+)
+    
+
+    def flight_node(self,state:AgentState) -> Command[Literal['supervisor']]:
+        print("*****************called research node************")
+
+        state_json = json.dumps(state, default=str).replace("{", "{{").replace("}", "}}")
+                       
+        system_prompt = ChatPromptTemplate.from_messages(
+        [
+            (
+                "system",
+                f"Current full state (as JSON dict for reference): {state_json}\n\n" + flight_prompt
+            ),
+            (
+                "user",
+                "{messages}"  
+            ),
+        ]
+    )
+        
+        last_five = state["messages"][-5:] if len(state["messages"]) > 5 else state["messages"]
+
+        flight_agent = create_react_agent(model=self.llm_model,tools=[get_flight_offers] ,prompt=system_prompt)
+        
+        result = flight_agent.invoke({
+        "messages": last_five
+    })
+        raw_text = result["messages"][-1].content
+        
+        return Command(
+    update={
+        "messages": state["messages"] + [
+            AIMessage(
+                content=raw_text,
+                name="flight_node"
+            )
+        ],
+        "flight": raw_text 
+    },
+    goto="supervisor",
+)
+    
+    from langchain_core.messages import HumanMessage
+
+def human_feedback_node(state: AgentState) -> Command[Literal['supervisor']]:
+    print("\n=== HUMAN IN THE LOOP ===")
+    print("Supervisor wants your feedback on the plan so far:\n")
+    print(state.get("messages")[-1].content)  # show last agent reply
+
+    user_input = input("Your feedback (or type 'ok' to approve): ")
+
+    return Command(
+        update={
+            "messages": state["messages"] + [
+                HumanMessage(content=user_input, name="human")
+            ],
+            "human_feedback": user_input
+        },
+        goto="supervisor" 
+    )
