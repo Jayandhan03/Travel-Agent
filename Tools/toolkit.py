@@ -135,29 +135,45 @@ def get_flight_offers(departure_city: str, arrival_city: str, travel_date: str) 
     
 
 @tool
-def get_hotels_stayapi(city: str, check_in: str, check_out: str, adults: int = 2):
+def get_hotels_tool(city: str, check_in: str, check_out: str, adults: int = 2):
     """
-    Fetch available hotel offers in a city for given check-in/check-out dates using StayAPI.
+    LangChain tool to fetch hotel data using SerpApi Google Hotels API.
+    Reads the API key from the environment inside the function.
+    Args:
+        city (str): City name
+        check_in (str): Check-in date YYYY-MM-DD
+        check_out (str): Check-out date YYYY-MM-DD
+        adults (int): Number of adults
+    Returns:
+        str: Formatted top hotel results
     """
-    url = "https://api.stayapi.com/v1/booking/search"
-    headers = {
-        "x-api-key": os.getenv("STAY_API_KEY")
-    }
-    params = {
-        "checkin_date": check_in,
-        "checkout_date": check_out,
-        "adults_number": adults,
-        "city_name": city,
-        "order_by": "popularity",
-        "filter_by_currency": "USD",
-        "locale": "en-us",
-        "room_number": 1,
-        "units": "metric"
-    }
-    response = requests.get(url, headers=headers, params=params)
-    response.raise_for_status()
-    return response.json()
+    # Get the API key inside the function
+    SERP_API_KEY = os.getenv("SERP_API_KEY")
+    if not SERP_API_KEY:
+        return "Error: SERP_API_KEY not found in environment variables."
 
+    url = f"https://serpapi.com/search?engine=google_hotels&q={city}&check_in_date={check_in}&check_out_date={check_out}&adults={adults}&api_key={SERP_API_KEY}"
+    
+    try:
+        response = requests.get(url)
+        if response.status_code != 200:
+            return f"Error: Received status {response.status_code} - {response.text}"
+
+        data = response.json()
+        if "properties" not in data:
+            return "No hotel properties found in the response."
+
+        results = []
+        for i, hotel in enumerate(data['properties'][:10]):  # top 10 hotels
+            name = hotel.get('name', 'N/A')
+            rating = hotel.get('overall_rating', 'N/A')
+            reviews = hotel.get('reviews', 0)
+            price = hotel.get('rate_per_night', {}).get('lowest', 'N/A')
+            results.append(f"{i+1}. {name} - Rating: {rating} ({reviews} reviews) - Price per night: {price}")
+        
+        return "\n".join(results)
+    except Exception as e:
+        return f"Exception occurred: {e}"
 
 @tool
 def get_activities_opentripmap(city: str, limit: int = 5):

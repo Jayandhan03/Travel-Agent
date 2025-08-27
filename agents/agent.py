@@ -8,7 +8,7 @@ from langgraph.prebuilt import create_react_agent
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 from utils.llm_config import LLMModel
 from Tools.toolkit import *
-from Prompt_template.prompts import *
+from Prompt_template.prompts import hotel_prompt,research_prompt,flight_prompt,supervisor_prompt,weather_prompt
 from typing import Any, TypedDict
 from typing_extensions import Annotated
 from langgraph.graph.message import add_messages
@@ -128,9 +128,8 @@ class TripPlannerAgent:
 )
     
 
-
     def weather_node(self,state:AgentState) -> Command[Literal['supervisor']]:
-        print("*****************called research node************")
+        print("*****************called weather node************")
 
         state_json = json.dumps(state, default=str, ensure_ascii=False).replace("{", "{{").replace("}", "}}")
                        
@@ -176,7 +175,7 @@ class TripPlannerAgent:
     
 
     def flight_node(self,state:AgentState) -> Command[Literal['supervisor']]:
-        print("*****************called research node************")
+        print("*****************called flight node************")
 
         state_json = json.dumps(state, default=str).replace("{", "{{").replace("}", "}}")
                        
@@ -215,6 +214,46 @@ class TripPlannerAgent:
     goto="supervisor",
 )
     
+
+    def hotel_node(self,state:AgentState) -> Command[Literal['supervisor']]:
+        print("*****************called hotel node************")
+
+        state_json = json.dumps(state, default=str).replace("{", "{{").replace("}", "}}")
+                       
+        system_prompt = ChatPromptTemplate.from_messages(
+        [
+            (
+                "system",
+                f"Current full state (as JSON dict for reference): {state_json}\n\n" + hotel_prompt
+            ),
+            (
+                "user",
+                "{messages}"  
+            ),
+        ]
+    )
+        
+        last_five = state["messages"][-5:] if len(state["messages"]) > 5 else state["messages"]
+
+        flight_agent = create_react_agent(model=self.llm_model,tools=[get_hotels_tool] ,prompt=system_prompt)
+        
+        result = flight_agent.invoke({
+        "messages": last_five
+    })
+        raw_text = result["messages"][-1].content
+        
+        return Command(
+    update={
+        "messages": state["messages"] + [
+            AIMessage(
+                content=raw_text,
+                name="hotel_node"
+            )
+        ],
+        "hotel": raw_text 
+    },
+    goto="supervisor",
+)
 
     def human_feedback_node(self,state: AgentState) -> Command[Literal['supervisor']]:
         print("\n=== HUMAN IN THE LOOP ===")

@@ -34,13 +34,13 @@ def main():
     graph.add_node("research_node", agent.research_node)
     graph.add_node("weather_node", agent.weather_node)
     graph.add_node("flight_node", agent.flight_node)
+    graph.add_node("hotel_node", agent.hotel_node)
     graph.add_node("human_feedback_node", agent.human_feedback_node)
 
     # Stub the rest of the nodes to satisfy Router literals
     def stub_node(state: AgentState) -> Command:
         return Command(goto=END)  # just finish if ever called
-    
-    graph.add_node("hotel_node", stub_node)
+        
     graph.add_node("activities_node", stub_node)
     graph.add_node("itirnerary_node", stub_node)
     # Edge from START to supervisor

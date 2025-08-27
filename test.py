@@ -1,32 +1,64 @@
+import os
 import requests
-import json
+from dotenv import load_dotenv
+from langchain.tools import tool
 
-# Define the passport and destination countries using ISO 2 country codes
-passport_country_code = "HK"  # Hong Kong
-destination_country_code = "US"  # United Kingdom
+# Load .env variables once
+load_dotenv()
 
-# Construct the API URL
-url = f"https://rough-sun-2523.fly.dev/visa/{passport_country_code}/{destination_country_code}"
+@tool
+def get_hotels_tool(city: str, check_in: str, check_out: str, adults: int = 2):
+    """
+    LangChain tool to fetch hotel data using SerpApi Google Hotels API.
+    Reads the API key from the environment inside the function.
+    Args:
+        city (str): City name
+        check_in (str): Check-in date YYYY-MM-DD
+        check_out (str): Check-out date YYYY-MM-DD
+        adults (int): Number of adults
+    Returns:
+        str: Formatted top hotel results
+    """
+    # Get the API key inside the function
+    SERP_API_KEY = os.getenv("SERP_API_KEY")
+    if not SERP_API_KEY:
+        return "Error: SERP_API_KEY not found in environment variables."
 
-try:
-    # Make the GET request to the API
-    response = requests.get(url, timeout=15)
-
-    # Raise an exception for bad status codes (4xx or 5xx)
-    response.raise_for_status()
-
-    # Parse the JSON response
-    data = response.json()
-
-    # Pretty print the JSON data
-    print(json.dumps(data, indent=4))
-
-except requests.exceptions.HTTPError as http_err:
-    print(f"HTTP error occurred: {http_err}")
-    # Try to print the error response from the API if available
+    url = f"https://serpapi.com/search?engine=google_hotels&q={city}&check_in_date={check_in}&check_out_date={check_out}&adults={adults}&api_key={SERP_API_KEY}"
+    
     try:
-        print(f"API Error Response: {response.json()}")
-    except json.JSONDecodeError:
-        print(f"Raw Error Response: {response.text}")
-except requests.exceptions.RequestException as err:
-    print(f"An error occurred: {err}")
+        response = requests.get(url)
+        if response.status_code != 200:
+            return f"Error: Received status {response.status_code} - {response.text}"
+
+        data = response.json()
+        if "properties" not in data:
+            return "No hotel properties found in the response."
+
+        results = []
+        for i, hotel in enumerate(data['properties'][:10]):  # top 10 hotels
+            name = hotel.get('name', 'N/A')
+            rating = hotel.get('overall_rating', 'N/A')
+            reviews = hotel.get('reviews', 0)
+            price = hotel.get('rate_per_night', {}).get('lowest', 'N/A')
+            results.append(f"{i+1}. {name} - Rating: {rating} ({reviews} reviews) - Price per night: {price}")
+        
+        return "\n".join(results)
+    except Exception as e:
+        return f"Exception occurred: {e}"
+
+# --- Test the tool ---
+if __name__ == "__main__":
+    city = "London"
+    check_in = "2025-08-29"
+    check_out = "2025-08-31"
+    adults = 2
+
+    # Use invoke with a dict as required by LangChain
+    result = get_hotels_tool.invoke({
+        "city": city,
+        "check_in": check_in,
+        "check_out": check_out,
+        "adults": adults
+    })
+    print(result)
