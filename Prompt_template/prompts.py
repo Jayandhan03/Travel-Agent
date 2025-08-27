@@ -9,7 +9,8 @@ if all three are populated finish the workflow
 2.  If the `research` field in the state is empty or incomplete, you must route the workflow to the `research_node`.
 3.  If the `research` field is filled and contains any information thats enough, you must route the workflow to `weather_node`.
 4.  If the weather_node updated the state["weather"] you must route the workflow to 'flight_node'.
-5.  If the flight_node updated the state["flight"] you must route the workflow to 'FINISH'.
+5.  If the flight_node updated the state["flight"] you must route the workflow to 'human_feedback_node with the current state information to ask the user ,whether everything is alright'.
+6.  If the human gave "YES" as input , you must route the workflow to 'FINISH'.
 Based on your analysis, call the appropriate tool to direct the workflow to the correct next step.
 """
 

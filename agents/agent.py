@@ -17,7 +17,7 @@ from copy import deepcopy
 
 
 class Router(TypedDict):
-    next: Literal["research_node","weather_node", "flight_node","hotel_node","activities_node","itirnerary_node",END]
+    next: Literal["research_node","weather_node", "flight_node","hotel_node","activities_node","itirnerary_node","human_feedback_node",END]
     reasoning: str
 
 class AgentState(TypedDict, total=False):
@@ -41,7 +41,7 @@ class TripPlannerAgent:
     def __init__(self):
         self.llm_model = LLMModel
 
-    def supervisor_node(self,state:AgentState) -> Command[Literal["research_node","weather_node", "flight_node","hotel_node","activities_node","itirnerary_node",END]]:
+    def supervisor_node(self,state:AgentState) -> Command[Literal["research_node","weather_node", "flight_node","hotel_node","activities_node","itirnerary_node","human_feedback_node",END]]:
         print("**************************below is my state right after entering****************************")
         print(state)
 
@@ -215,21 +215,20 @@ class TripPlannerAgent:
     goto="supervisor",
 )
     
-    from langchain_core.messages import HumanMessage
 
-def human_feedback_node(state: AgentState) -> Command[Literal['supervisor']]:
-    print("\n=== HUMAN IN THE LOOP ===")
-    print("Supervisor wants your feedback on the plan so far:\n")
-    print(state.get("messages")[-1].content)  # show last agent reply
+    def human_feedback_node(self,state: AgentState) -> Command[Literal['supervisor']]:
+        print("\n=== HUMAN IN THE LOOP ===")
+        print("Supervisor wants your feedback on the plan so far:\n")
+        print(state.get("messages")[-1].content)  # show last agent reply
 
-    user_input = input("Your feedback (or type 'ok' to approve): ")
+        user_input = input("Your feedback (or type 'ok' to approve): ")
 
-    return Command(
-        update={
-            "messages": state["messages"] + [
-                HumanMessage(content=user_input, name="human")
-            ],
-            "human_feedback": user_input
-        },
-        goto="supervisor" 
-    )
+        return Command(
+            update={
+                "messages": state["messages"] + [
+                    HumanMessage(content=user_input, name="human")
+                ],
+                "human_feedback": user_input
+            },
+            goto="supervisor" 
+        )
