@@ -18,7 +18,7 @@ from datetime import date
 
 
 class Router(TypedDict):
-    next: Literal["research_node","weather_node", "flight_node","hotel_node","activities_node","itinerary_node","human_feedback_node",END]
+    next: Literal["research_node","weather_node", "flight_node","hotel_node","activities_node","itirnerary_node","human_feedback_node",END]
     reasoning: str
 
 class AgentState(TypedDict, total=False):
@@ -42,7 +42,7 @@ class TripPlannerAgent:
     def __init__(self):
         self.llm_model = LLMModel
 
-    def supervisor_node(self,state:AgentState) -> Command[Literal["research_node","weather_node", "flight_node","hotel_node","activities_node","itinerary_node","human_feedback_node",END]]:
+    def supervisor_node(self,state:AgentState) -> Command[Literal["research_node","weather_node", "flight_node","hotel_node","activities_node","itirnerary_node","human_feedback_node",END]]:
         print("**************************below is my state right after entering****************************")
         print(state)
 
@@ -87,12 +87,7 @@ class TripPlannerAgent:
     def research_node(self,state:AgentState) -> Command[Literal['supervisor']]:
         print("*****************called research node************")
 
-        research_context = {
-        "destination": state.get("destination"),
-        "departure": state.get("departure"),
-    }
-
-        state_json = json.dumps(research_context, default=str).replace("{", "{{").replace("}", "}}")
+        state_json = json.dumps(state, default=str).replace("{", "{{").replace("}", "}}")
                        
         system_prompt = ChatPromptTemplate.from_messages(
         [
@@ -138,13 +133,7 @@ class TripPlannerAgent:
     def weather_node(self,state:AgentState) -> Command[Literal['supervisor']]:
         print("*****************called weather node************")
 
-        weather_context = {
-        "destination": state.get("destination"),
-        "trip_start_date": state.get("trip_start_date"),
-        "number_of_days": state.get("number_of_days"),
-    }
-
-        state_json = json.dumps(weather_context, default=str, ensure_ascii=False).replace("{", "{{").replace("}", "}}")
+        state_json = json.dumps(state, default=str, ensure_ascii=False).replace("{", "{{").replace("}", "}}")
                        
         system_prompt = ChatPromptTemplate.from_messages(
         [
@@ -191,15 +180,7 @@ class TripPlannerAgent:
     def flight_node(self,state:AgentState) -> Command[Literal['supervisor']]:
         print("*****************called flight node************")
 
-        flight_context = {
-        "departure": state.get("departure"),
-        "destination": state.get("destination"),
-        "trip_start_date": state.get("trip_start_date"),
-        "number_of_days": state.get("number_of_days"),
-    }
-
-    # Convert to JSON (escaped for f-string)
-        state_json = json.dumps(flight_context, default=str).replace("{", "{{").replace("}", "}}")
+        state_json = json.dumps(state, default=str).replace("{", "{{").replace("}", "}}")
                        
         system_prompt = ChatPromptTemplate.from_messages(
         [
@@ -242,15 +223,7 @@ class TripPlannerAgent:
     def hotel_node(self,state:AgentState) -> Command[Literal['supervisor']]:
         print("*****************called hotel node************")
 
-        hotel_context = {
-        "destination": state.get("destination"),
-        "departure": state.get("departure"),
-        "number_of_days": state.get("number_of_days"),
-        "trip_start_date": state.get("trip_start_date"),
-    }
-
-    # dump only these
-        state_json = json.dumps(hotel_context, default=str).replace("{", "{{").replace("}", "}}")
+        state_json = json.dumps(state, default=str).replace("{", "{{").replace("}", "}}")
                        
         system_prompt = ChatPromptTemplate.from_messages(
         [
@@ -292,14 +265,7 @@ class TripPlannerAgent:
     def activities_node(self,state:AgentState) -> Command[Literal['supervisor']]:
         print("*****************called activities node************")
 
-        activities_context = {
-        "departure": state.get("departure"),
-        "number_of_days": state.get("number_of_days"),
-        "trip_start_date": state.get("trip_start_date"),
-    }
-
-    # dump only these
-        state_json = json.dumps(activities_context, default=str).replace("{", "{{").replace("}", "}}")
+        state_json = json.dumps(state, default=str).replace("{", "{{").replace("}", "}}")
                        
         system_prompt = ChatPromptTemplate.from_messages(
         [
@@ -340,21 +306,7 @@ class TripPlannerAgent:
     def itinerary_node(self, state: AgentState) -> Command[Literal['supervisor']]:
         print("*****************called itinerary node************")
 
-        itinerary_context = {
-        "research" : state.get("research"),
-        "weather" : state.get("weather"),
-        "hotel" : state.get("hotel"),
-        "activities" : state.get("activities"),
-        "destination": state.get("destination"),
-        "departure": state.get("departure"),
-        "number_of_days": state.get("number_of_days"),
-        "trip_start_date": state.get("trip_start_date"),
-        "flight" : state.get("flight"),
-        "number_of_people": state.get("number_of_people")
-    }
-
-    # dump only these
-        state_json = json.dumps(itinerary_context, default=str).replace("{", "{{").replace("}", "}}")
+        state_json = json.dumps(state, default=str).replace("{", "{{").replace("}", "}}")
 
         system_prompt = ChatPromptTemplate.from_messages(
             [
