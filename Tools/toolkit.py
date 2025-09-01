@@ -7,7 +7,6 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-
 @tool("fetch_visa_info", return_direct=True)
 def fetch_visa_info(passport_country_code: str, destination_country_code: str) -> str:
     """
@@ -34,16 +33,25 @@ def fetch_visa_info(passport_country_code: str, destination_country_code: str) -
     except requests.exceptions.RequestException as err:
         return f"Request error: {err}"
     
-@tool
-def get_weather(place: str) -> dict:
+
+@tool("get_weather_forecast", return_direct=True)
+def get_weather(place: str, start_date: str, end_date: str) -> dict:
     """
-    Get the current weather forecast for a given place (city/town/village).
-    Uses OpenStreetMap for geocoding and Open-Meteo for weather data.
+    Get the weather forecast for a given place between start_date and end_date.
+    Dates must be within the next ~16 days (Open-Meteo limit).
+
+    Args:
+        place: City/town/village name
+        start_date: Start date in YYYY-MM-DD format
+        end_date: End date in YYYY-MM-DD format
+    
+    Returns:
+        Dict with location details and forecast (daily max/min temp, precipitation, wind).
     """
-    # 1. Geocode the place -> lat/lon
+    # 1. Geocode place
     geo_url = "https://nominatim.openstreetmap.org/search"
     geo_params = {"q": place, "format": "json", "limit": 1}
-    geo_resp = requests.get(geo_url, params=geo_params, headers={"User-Agent": "langchain-tool"})
+    geo_resp = requests.get(geo_url, params=geo_params, headers={"User-Agent": "trip-weather-tool"})
     geo_resp.raise_for_status()
     geo_data = geo_resp.json()
     if not geo_data:
@@ -51,12 +59,15 @@ def get_weather(place: str) -> dict:
     
     lat, lon = geo_data[0]["lat"], geo_data[0]["lon"]
 
-    # 2. Fetch weather from Open-Meteo
+    # 2. Fetch forecast
     weather_url = "https://api.open-meteo.com/v1/forecast"
     params = {
         "latitude": lat,
         "longitude": lon,
-        "current_weather": True,
+        "daily": ["temperature_2m_max","temperature_2m_min","precipitation_sum","windspeed_10m_max"],
+        "timezone": "auto",
+        "start_date": start_date,
+        "end_date": end_date
     }
     weather_resp = requests.get(weather_url, params=params)
     weather_resp.raise_for_status()
@@ -66,7 +77,7 @@ def get_weather(place: str) -> dict:
         "place": place,
         "latitude": lat,
         "longitude": lon,
-        "current_weather": weather_data.get("current_weather", {}),
+        "forecast": weather_data.get("daily", {}),
     }
 
 
@@ -132,7 +143,7 @@ def get_flight_offers(departure_city: str, arrival_city: str, travel_date: str) 
         return {"error": f"HTTP Error: {e.response.text}"}
     except Exception as e:
         return {"error": str(e)}
-    
+
 
 @tool
 def get_hotels_tool(city: str, check_in: str, check_out: str, adults: int = 2):
@@ -175,6 +186,7 @@ def get_hotels_tool(city: str, check_in: str, check_out: str, adults: int = 2):
     except Exception as e:
         return f"Exception occurred: {e}"
 
+
 @tool
 def get_activities_opentripmap(city: str, limit: int = 5):
     """
@@ -201,7 +213,7 @@ def get_activities_opentripmap(city: str, limit: int = 5):
         "lat": lat,
         "limit": limit,
         "apikey": API_KEY,
-        "rate": 3,        # optional: filter by popularity
+        "rate": 3,        
         "format": "json"
     }
     resp = requests.get(radius_url, params=radius_params)

@@ -8,12 +8,13 @@ from langgraph.prebuilt import create_react_agent
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 from utils.llm_config import LLMModel
 from Tools.toolkit import *
-from Prompt_template.prompts import hotel_prompt,research_prompt,flight_prompt,supervisor_prompt,weather_prompt
+from Prompt_template.prompts import hotel_prompt,research_prompt,flight_prompt,supervisor_prompt,weather_prompt,activities_prompt
 from typing import Any, TypedDict
 from typing_extensions import Annotated
 from langgraph.graph.message import add_messages
 import json,re,unicodedata
 from copy import deepcopy
+from datetime import date
 
 
 class Router(TypedDict):
@@ -101,7 +102,7 @@ class TripPlannerAgent:
         ]
     )
         
-        last_five = state["messages"][-5:] if len(state["messages"]) > 5 else state["messages"]
+        last_five = state["messages"][-2:] if len(state["messages"]) > 5 else state["messages"]
 
         research_agent = create_react_agent(model=self.llm_model,tools=[fetch_visa_info] ,prompt=system_prompt)
         
@@ -114,11 +115,12 @@ class TripPlannerAgent:
         clean_text = clean_text.replace("\n", " ").replace("\r", " ")  # remove newlines
         clean_text = re.sub(r'\s+', ' ', clean_text).strip()
         
+        summary_text = clean_text[:500]
         return Command(
     update={
         "messages": state["messages"] + [
             AIMessage(
-                content=clean_text,
+                content=summary_text,
                 name="research_node"
             )
         ],
@@ -146,7 +148,7 @@ class TripPlannerAgent:
         ]
     )
         
-        last_five = state["messages"][-5:] if len(state["messages"]) > 5 else state["messages"]
+        last_five = state["messages"][-2:] if len(state["messages"]) > 5 else state["messages"]
 
         weather_agent = create_react_agent(model=self.llm_model,tools=[get_weather] ,prompt=system_prompt)
         
@@ -159,12 +161,13 @@ class TripPlannerAgent:
         clean_text = unicodedata.normalize("NFKC", raw_text)
         clean_text = clean_text.replace("\u202f", " ").strip()
         clean_text = re.sub(r"[^\x20-\x7E°]+", " ", clean_text)
-        
+        summary_text = clean_text[:500]
+
         return Command(
     update={
         "messages": state["messages"] + [
             AIMessage(
-                content=clean_text,
+                content=summary_text,
                 name="weather_node"
             )
         ],
@@ -192,7 +195,7 @@ class TripPlannerAgent:
         ]
     )
         
-        last_five = state["messages"][-5:] if len(state["messages"]) > 5 else state["messages"]
+        last_five = state["messages"][-2:] if len(state["messages"]) > 5 else state["messages"]
 
         flight_agent = create_react_agent(model=self.llm_model,tools=[get_flight_offers] ,prompt=system_prompt)
         
@@ -201,11 +204,13 @@ class TripPlannerAgent:
     })
         raw_text = result["messages"][-1].content
         
+        summary_text = raw_text[:500]
+
         return Command(
     update={
         "messages": state["messages"] + [
             AIMessage(
-                content=raw_text,
+                content=summary_text,
                 name="flight_node"
             )
         ],
@@ -233,7 +238,7 @@ class TripPlannerAgent:
         ]
     )
         
-        last_five = state["messages"][-5:] if len(state["messages"]) > 5 else state["messages"]
+        last_five = state["messages"][-2:] if len(state["messages"]) > 5 else state["messages"]
 
         flight_agent = create_react_agent(model=self.llm_model,tools=[get_hotels_tool] ,prompt=system_prompt)
         
@@ -241,12 +246,14 @@ class TripPlannerAgent:
         "messages": last_five
     })
         raw_text = result["messages"][-1].content
+
+        summary_text = raw_text[:500]
         
         return Command(
     update={
         "messages": state["messages"] + [
             AIMessage(
-                content=raw_text,
+                content=summary_text,
                 name="hotel_node"
             )
         ],
@@ -254,6 +261,49 @@ class TripPlannerAgent:
     },
     goto="supervisor",
 )
+    
+    def activities_node(self,state:AgentState) -> Command[Literal['supervisor']]:
+        print("*****************called activities node************")
+
+        state_json = json.dumps(state, default=str).replace("{", "{{").replace("}", "}}")
+                       
+        system_prompt = ChatPromptTemplate.from_messages(
+        [
+            (
+                "system",
+                f"Current full state (as JSON dict for reference): {state_json}\n\n" + activities_prompt
+            ),
+            (
+                "user",
+                "{messages}"  
+            ),
+        ]
+    )
+        
+        last_five = state["messages"][-2:] if len(state["messages"]) > 5 else state["messages"]
+
+        activities_agent = create_react_agent(model=self.llm_model,tools=[get_activities_opentripmap] ,prompt=system_prompt)
+        
+        result = activities_agent.invoke({
+        "messages": last_five
+    })
+        raw_text = result["messages"][-1].content
+
+        summary_text = raw_text[:500]
+        
+        return Command(
+    update={
+        "messages": state["messages"] + [
+            AIMessage(
+                content=summary_text,
+                name="activities_node"
+            )
+        ],
+        "activities": raw_text 
+    },
+    goto="supervisor",
+)
+    
 
     def human_feedback_node(self,state: AgentState) -> Command[Literal['supervisor']]:
         print("\n=== HUMAN IN THE LOOP ===")
