@@ -8,14 +8,18 @@ from langgraph.prebuilt import create_react_agent
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 from utils.llm_config import LLMModel
 from Tools.toolkit import *
-from Prompt_template.prompts import hotel_prompt,research_prompt,flight_prompt,supervisor_prompt,weather_prompt,activities_prompt,itinerary_prompt
+from Prompt_template.prompts import hotel_prompt_string,research_prompt,flight_prompt_string,supervisor_prompt,weather_prompt_string,activities_prompt_string,itinerary_prompt_string
 from typing import Any, TypedDict
 from typing_extensions import Annotated
 from langgraph.graph.message import add_messages
-import json,re,unicodedata
-from copy import deepcopy
+import json
 from datetime import date
-
+from Guardrail.Visa_guardrail import *
+from Guardrail.weather_guardrail import *
+from Guardrail.flight_guardrail import *
+from Guardrail.hotel_guardrail import *
+from Guardrail.activities_guardrail import *
+from Guardrail.itinerary_guardrail import *
 
 class Router(TypedDict):
     next: Literal["research_node","weather_node", "flight_node","hotel_node","activities_node","itinerary_node","human_feedback_node",END]
@@ -28,7 +32,6 @@ class AgentState(TypedDict, total=False):
     departure: str
     trip_start_date: str
     number_of_people: int
-    id_number: str
     research: dict[str, Any]
     weather: dict[str, Any]
     flight: dict[str, Any]
@@ -46,22 +49,28 @@ class TripPlannerAgent:
         print("**************************below is my state right after entering****************************")
         print(state)
 
-        serializable_state = deepcopy(state)
+        ROUTING_KEYS = [
+            "research", "weather", "flight", "hotel", "activities", "itinerary"
+        ]
 
-        if "messages" in serializable_state and serializable_state["messages"]:
-            serializable_state['messages'] = [msg.dict() for msg in serializable_state['messages']]
+        supervisor_context = {
+            key: bool(state.get(key)) for key in ROUTING_KEYS
+        }
 
-        user_content_with_state = f"Current state:\n{json.dumps(serializable_state, indent=2)}"
+        user_content_with_state = f"Current task completion state:\n{json.dumps(supervisor_context, indent=2)}"
+        print(f"--- Sending this minimal context to the LLM ---\n{user_content_with_state}\n-------------------------------------------------")
         
         messages_for_llm = [
             SystemMessage(content=supervisor_prompt),
             HumanMessage(content=user_content_with_state),
         ]
         
-        messages_for_llm.extend(state["messages"][-5:])
+        if state.get("messages"):
+            last_message = state["messages"][-1]
+            messages_for_llm.append(last_message)
+            print(f"--- Attaching last message ---\nType: {type(last_message).__name__}\nContent: {last_message.content}\n----------------------------------")
 
-        print("***********************this is my message*****************************************")
-        print(messages_for_llm)
+        print("***********************Invoking LLM for routing decision************************")
         
         response = self.llm_model.with_structured_output(Router).invoke(messages_for_llm)
         
@@ -84,159 +93,183 @@ class TripPlannerAgent:
                     )
     
 
-    def research_node(self,state:AgentState) -> Command[Literal['supervisor']]:
+    def research_node(self, state: AgentState) -> Command[Literal['supervisor']]:
         print("*****************called research node************")
 
-        research_context = {
-        "destination": state.get("destination"),
-        "departure": state.get("departure"),
-    }
+        destination = state.get("destination")
 
-        state_json = json.dumps(research_context, default=str).replace("{", "{{").replace("}", "}}")
-                       
+        departure = state.get("departure")
+
+        nationality = "Indian"
+
+        task_prompt = (
+        f"Find the visa requirements for a citizen with a {nationality} passport "
+        f"traveling to {destination} from {departure}."
+    )
+        print(f"--- Sending this direct task to the agent ---\n{task_prompt}\n---------------------------------------------")
+
         system_prompt = ChatPromptTemplate.from_messages(
         [
-            (
-                "system",
-                f"Current full state (as JSON dict for reference): {state_json}\n\n" + research_prompt
-            ),
-            (
-                "user",
-                "{messages}"  
-            ),
+            ("system", research_prompt), 
+            ("user", "{messages}"),
         ]
     )
-        
-        last_five = state["messages"][-2:] if len(state["messages"]) > 5 else state["messages"]
 
-        research_agent = create_react_agent(model=self.llm_model,tools=[fetch_visa_info] ,prompt=system_prompt)
-        
-        result = research_agent.invoke({
-        "messages": last_five
-    })
-        clean_text = result["messages"][-1].content.strip()
+        last_five = state["messages"][-1:] 
 
-        clean_text = re.sub(r'[\{\}"\\]', '', clean_text)  # remove { } " \
-        clean_text = clean_text.replace("\n", " ").replace("\r", " ")  # remove newlines
-        clean_text = re.sub(r'\s+', ' ', clean_text).strip()
-        
-        summary_text = clean_text[:100]
+        research_agent = create_react_agent(
+            model=self.llm_model,
+            tools=[fetch_visa_info],
+            prompt=system_prompt
+        )
+
+        result = research_agent.invoke({"messages": [HumanMessage(content=task_prompt)]})
+
+        # 🔑 Get the last tool observation (structured JSON output)
+        tool_output = None
+        if "intermediate_steps" in result:
+            # intermediate_steps is usually [(AgentAction, observation), ...]
+            tool_output = result["intermediate_steps"][-1][1]
+        else:
+            # fallback to final message content
+            tool_output = result["messages"][-1].content
+
+        # 🔑 Summarize JSON output with schema guardrail
+        parsed = summarize_tool_output(tool_output, self.llm_model)
+
         return Command(
-    update={
-        "messages": state["messages"] + [
-            AIMessage(
-                content=summary_text,
-                name="research_node"
-            )
-        ],
-        "research": clean_text 
-    },
-    goto="supervisor",
-)
-    
+            update={
+                "messages": state["messages"][-1:] + [
+                    AIMessage(
+                        content=parsed.summary,
+                        name="research_node"
+                    )
+                ],
+                "research": parsed.details
+            },
+            goto="supervisor",
+        )
 
-    def weather_node(self,state:AgentState) -> Command[Literal['supervisor']]:
+
+    def weather_node(self, state: AgentState) -> Command[Literal['supervisor']]:
         print("*****************called weather node************")
 
         weather_context = {
-        "destination": state.get("destination"),
-        "trip_start_date": state.get("trip_start_date"),
-        "number_of_days": state.get("number_of_days"),
-    }
+            "destination": state.get("destination"),
+            "trip_start_date": state.get("trip_start_date"),
+            "number_of_days": state.get("number_of_days"),
+        }
 
-        state_json = json.dumps(weather_context, default=str, ensure_ascii=False).replace("{", "{{").replace("}", "}}")
-                       
+        # Escape curly braces for f-string safety
+        state_json = json.dumps(weather_context, default=str, ensure_ascii=False) \
+            .replace("{", "{{").replace("}", "}}")
+
+        # Merge context + weather summarizer prompt
         system_prompt = ChatPromptTemplate.from_messages(
-        [
-            (
-                "system",
-                f"Current full state (as JSON dict for reference): {state_json}\n\n" + weather_prompt
-            ),
-            (
-                "user",
-                "{messages}"  
-            ),
-        ]
-    )
-        
-        last_five = state["messages"][-2:] if len(state["messages"]) > 5 else state["messages"]
+            [
+                (
+                    "system",
+                    f"Current full state (as JSON dict for reference): {state_json}\n\n" + weather_prompt_string
+                ),
+                (
+                    "user",
+                    "{messages}"
+                ),
+            ]
+        )
 
-        weather_agent = create_react_agent(model=self.llm_model,tools=[get_weather] ,prompt=system_prompt)
-        
-        result = weather_agent.invoke({
-        "messages": last_five
-    })
-        raw_text = result["messages"][-1].content
 
-        # Normalize Unicode & strip control chars
-        clean_text = unicodedata.normalize("NFKC", raw_text)
-        clean_text = clean_text.replace("\u202f", " ").strip()
-        clean_text = re.sub(r"[^\x20-\x7E°]+", " ", clean_text)
-        summary_text = clean_text[:100]
+        # Keep conversation short
+        last_five = state["messages"][-1:]
+
+        # Run weather agent
+        weather_agent = create_react_agent(
+            model=self.llm_model,
+            tools=[get_weather], 
+            prompt=system_prompt
+        )
+        result = weather_agent.invoke({"messages": last_five})
+
+        # Extract JSON tool output
+        if "intermediate_steps" in result:
+            tool_output = result["intermediate_steps"][-1][1]
+        else:
+            tool_output = result["messages"][-1].content
+
+        # Run schema-based summarizer
+        parsed = summarize_weather_output(tool_output, self.llm_model)
 
         return Command(
-    update={
-        "messages": state["messages"] + [
-            AIMessage(
-                content=summary_text,
-                name="weather_node"
-            )
-        ],
-        "weather": clean_text 
-    },
-    goto="supervisor",
-)
-    
+            update={
+                "messages": state["messages"][-1:] + [
+                    AIMessage(
+                        content=parsed.summary,
+                        name="weather_node"
+                    )
+                ],
+                "weather": parsed.details
+            },
+            goto="supervisor",
+        )
 
-    def flight_node(self,state:AgentState) -> Command[Literal['supervisor']]:
+
+    def flight_node(self, state: AgentState) -> Command[Literal['supervisor']]:
         print("*****************called flight node************")
 
         flight_context = {
-        "departure": state.get("departure"),
-        "destination": state.get("destination"),
-        "trip_start_date": state.get("trip_start_date"),
-        "number_of_days": state.get("number_of_days"),
-    }
+            "departure": state.get("departure"),
+            "destination": state.get("destination"),
+            "trip_start_date": state.get("trip_start_date"),
+            "number_of_days": state.get("number_of_days"),
+        }
 
-    # Convert to JSON (escaped for f-string)
-        state_json = json.dumps(flight_context, default=str).replace("{", "{{").replace("}", "}}")
-                       
-        system_prompt = ChatPromptTemplate.from_messages(
-        [
-            (
-                "system",
-                f"Current full state (as JSON dict for reference): {state_json}\n\n" + flight_prompt
-            ),
-            (
-                "user",
-                "{messages}"  
-            ),
-        ]
-    )
-        
-        last_five = state["messages"][-2:] if len(state["messages"]) > 5 else state["messages"]
+        # Keep context lean – no giant prompt string injected here
+        state_json = json.dumps(flight_context, default=str, ensure_ascii=False) \
+            .replace("{", "{{").replace("}", "}}")
 
-        flight_agent = create_react_agent(model=self.llm_model,tools=[get_flight_offers] ,prompt=system_prompt)
-        
+        # Simple system prompt like weather_node
+        system_prompt = ChatPromptTemplate.from_messages([
+            ("system", f"Current full state (as JSON dict for reference): {state_json}"+ flight_prompt_string),
+            ("user", "{messages}")
+        ])
+
+        # Trim history aggressively
+        last_five = state["messages"][-1:]
+
+        # Run flight agent with just the tool and context
+        flight_agent = create_react_agent(
+            model=self.llm_model,
+            tools=[get_flight_offers],
+            prompt=system_prompt
+        )
         result = flight_agent.invoke({
-        "messages": last_five
-    })
-        raw_text = result["messages"][-1].content
-        
-        summary_text = raw_text[:100]
+    "messages": [
+        HumanMessage(content=f"Flight search context: {flight_context}")
+    ]
+})
+
+
+        # Extract tool output (JSON from get_flight_offers)
+        if "intermediate_steps" in result:
+            tool_output = result["intermediate_steps"][-1][1]
+        else:
+            tool_output = result["messages"][-1].content
+
+        # Run schema-based summarizer
+        parsed = summarize_flight_output(tool_output, self.llm_model)
 
         return Command(
-    update={
-        "messages": state["messages"] + [
-            AIMessage(
-                content=summary_text,
-                name="flight_node"
-            )
-        ],
-        "flight": raw_text 
-    },
-    goto="supervisor",
-)
+            update={
+                "messages": state["messages"][-1:] + [
+                    AIMessage(
+                        content=parsed.summary,
+                        name="flight_node"
+                    )
+                ],
+                "flight": parsed.details
+            },
+            goto="supervisor",
+        )
     
 
     def hotel_node(self,state:AgentState) -> Command[Literal['supervisor']]:
@@ -256,7 +289,7 @@ class TripPlannerAgent:
         [
             (
                 "system",
-                f"Current full state (as JSON dict for reference): {state_json}\n\n" + hotel_prompt
+                f"Current full state (as JSON dict for reference): {state_json}\n\n" + hotel_prompt_string
             ),
             (
                 "user",
@@ -265,26 +298,33 @@ class TripPlannerAgent:
         ]
     )
         
-        last_five = state["messages"][-2:] if len(state["messages"]) > 5 else state["messages"]
+        last_five = state["messages"][-1:] 
 
-        flight_agent = create_react_agent(model=self.llm_model,tools=[get_hotels_tool] ,prompt=system_prompt)
+        hotel_agent = create_react_agent(model=self.llm_model,tools=[get_hotels_tool] ,prompt=system_prompt)
         
-        result = flight_agent.invoke({
+        result = hotel_agent.invoke({
         "messages": last_five
     })
-        raw_text = result["messages"][-1].content
+        tool_output = None
+        if "intermediate_steps" in result:
+            # intermediate_steps is usually [(AgentAction, observation), ...]
+            tool_output = result["intermediate_steps"][-1][1]
+        else:
+            # fallback to final message content
+            tool_output = result["messages"][-1].content
 
-        summary_text = raw_text[:100]
+        # 🔑 Summarize JSON output with schema guardrail
+        parsed = summarize_flight_output(tool_output, self.llm_model)
         
         return Command(
     update={
-        "messages": state["messages"] + [
+        "messages": state["messages"][-1:] + [
             AIMessage(
-                content=summary_text,
+                content=parsed.summary,
                 name="hotel_node"
             )
         ],
-        "hotel": raw_text 
+        "hotel": parsed.details
     },
     goto="supervisor",
 )
@@ -305,7 +345,7 @@ class TripPlannerAgent:
         [
             (
                 "system",
-                f"Current full state (as JSON dict for reference): {state_json}\n\n" + activities_prompt
+                f"Current full state (as JSON dict for reference): {state_json}\n\n" + activities_prompt_string
             ),
             (
                 "user",
@@ -314,29 +354,38 @@ class TripPlannerAgent:
         ]
     )
         
-        last_five = state["messages"][-2:] if len(state["messages"]) > 5 else state["messages"]
+        last_five = state["messages"][-1:]
 
         activities_agent = create_react_agent(model=self.llm_model,tools=[get_activities_opentripmap] ,prompt=system_prompt)
         
         result = activities_agent.invoke({
         "messages": last_five
     })
-        raw_text = result["messages"][-1].content
+        tool_output = None
+        if "intermediate_steps" in result:
+            # intermediate_steps is usually [(AgentAction, observation), ...]
+            tool_output = result["intermediate_steps"][-1][1]
+        else:
+            # fallback to final message content
+            tool_output = result["messages"][-1].content
 
-        summary_text = raw_text[:100]
+        # 🔑 Summarize JSON output with schema guardrail
+        parsed = summarize_activities_output(tool_output, self.llm_model)
         
         return Command(
     update={
-        "messages": state["messages"] + [
+        "messages": state["messages"][-1:] + [
             AIMessage(
-                content=summary_text,
+                content=parsed.summary,
                 name="activities_node"
             )
         ],
-        "activities": raw_text 
+        "activities": parsed.details
     },
     goto="supervisor",
 )
+    
+
     def itinerary_node(self, state: AgentState) -> Command[Literal['supervisor']]:
         print("*****************called itinerary node************")
 
@@ -360,7 +409,7 @@ class TripPlannerAgent:
             [
                 (
                     "system",
-                    f"Current full state (as JSON dict for reference): {state_json}\n\n" + itinerary_prompt
+                    f"Current full state (as JSON dict for reference): {state_json}\n\n" + itinerary_prompt_string
                 ),
                 (
                     "user",
@@ -370,7 +419,7 @@ class TripPlannerAgent:
         )
 
         # Use last few messages to keep context light
-        last_five = state["messages"][-2:] if len(state["messages"]) > 5 else state["messages"]
+        last_five = state["messages"][-1:]
 
         # Replace tool with itinerary generator (if you have one)
         itinerary_agent = create_react_agent(
@@ -383,18 +432,26 @@ class TripPlannerAgent:
             "messages": last_five
         })
 
-        raw_text = result["messages"][-1].content
-        summary_text = raw_text[:100]
+        tool_output = None
+        if "intermediate_steps" in result:
+            # intermediate_steps is usually [(AgentAction, observation), ...]
+            tool_output = result["intermediate_steps"][-1][1]
+        else:
+            # fallback to final message content
+            tool_output = result["messages"][-1].content
+
+        # 🔑 Summarize JSON output with schema guardrail
+        parsed = summarize_itinerary_output(tool_output, self.llm_model)
 
         return Command(
             update={
-                "messages": state["messages"] + [
+                "messages": state["messages"][-1:] + [
                     AIMessage(
-                        content=summary_text,
+                        content=parsed.summary,
                         name="itinerary_node"
                     )
                 ],
-                "itinerary": raw_text
+                "itinerary": parsed.details
             },
             goto="supervisor",
         )
@@ -408,7 +465,7 @@ class TripPlannerAgent:
 
         return Command(
             update={
-                "messages": state["messages"] + [
+                "messages": state["messages"][-1:] + [
                     HumanMessage(content=user_input, name="human")
                 ],
                 "human_feedback": user_input

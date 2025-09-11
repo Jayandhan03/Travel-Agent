@@ -82,27 +82,20 @@ def get_weather(place: str, start_date: str, end_date: str) -> dict:
 
 
 @tool
-def get_flight_offers(departure_city: str, arrival_city: str, travel_date: str) -> dict:
+def get_flight_offers(departure_city: str,arrival_city: str,travel_date: str,travel_class: str = None,max_price: int = None,currency: str = "INR") -> dict:
     """
     Fetch available flight offers from Amadeus API for a given route and date.
-
-    Args:
-        departure_city (str): IATA code of the departure city (e.g., "DEL").
-        arrival_city (str): IATA code of the arrival city (e.g., "BOM").
-        travel_date (str): Date of travel in YYYY-MM-DD format.
-
-    Returns:
-        dict: A dictionary with flight offers or an error message.
+    Returns both raw JSON and extracted structured details.
     """
+
     try:
-        # 1. Get API credentials
+        # 1. API credentials
         api_key = os.getenv("AMADEUS_API_KEY")
         api_secret = os.getenv("AMADEUS_API_SECRET")
-
         if not api_key or not api_secret:
             return {"error": "Missing API credentials in .env file"}
 
-        # 2. Fetch access token
+        # 2. Access token
         token_url = "https://test.api.amadeus.com/v1/security/oauth2/token"
         payload = {
             "grant_type": "client_credentials",
@@ -112,31 +105,70 @@ def get_flight_offers(departure_city: str, arrival_city: str, travel_date: str) 
         token_resp = requests.post(token_url, data=payload)
         token_resp.raise_for_status()
         access_token = token_resp.json().get("access_token")
-
         if not access_token:
             return {"error": "Failed to retrieve access token"}
 
-        # 3. Fetch flight offers
+        # 3. Fetch offers
         url = "https://test.api.amadeus.com/v2/shopping/flight-offers"
-        headers = {
-            "Authorization": f"Bearer {access_token}",
-            "Content-Type": "application/json",
-        }
+        headers = {"Authorization": f"Bearer {access_token}"}
         params = {
             "originLocationCode": departure_city,
             "destinationLocationCode": arrival_city,
             "departureDate": travel_date,
             "adults": 1,
-            "max": 5,
+            "currencyCode": currency,
+            "max": 1,
         }
+        if travel_class:
+            params["travelClass"] = travel_class
+        if max_price:
+            params["maxPrice"] = max_price
+
         resp = requests.get(url, headers=headers, params=params)
         resp.raise_for_status()
+        offers = resp.json().get("data", [])
 
+        # fallback if strict filter yields nothing
+        if not offers:
+            params.pop("maxPrice", None)
+            resp = requests.get(url, headers=headers, params=params)
+            resp.raise_for_status()
+            offers = resp.json().get("data", [])
+
+        if not offers:
+            return {"error": "No flights found for given criteria."}
+
+        # 4. Extract structured details
+        extracted = []
+        for offer in offers:
+            price = offer.get("price", {}).get("total", "N/A")
+            itineraries = offer.get("itineraries", [])
+            segments = itineraries[0].get("segments", []) if itineraries else []
+
+            flight_segments = []
+            for seg in segments:
+                flight_segments.append({
+                    "carrier": seg.get("carrierCode"),
+                    "flight_number": seg.get("number"),
+                    "departure_airport": seg["departure"].get("iataCode"),
+                    "departure_time": seg["departure"].get("at"),
+                    "arrival_airport": seg["arrival"].get("iataCode"),
+                    "arrival_time": seg["arrival"].get("at"),
+                    "duration": seg.get("duration")
+                })
+
+            extracted.append({
+                "price": f"{price} {currency}",
+                "segments": flight_segments
+            })
+
+        # 5. Return both raw + extracted
         return {
             "departure_city": departure_city,
             "arrival_city": arrival_city,
             "travel_date": travel_date,
-            "offers": resp.json().get("data", []),
+            "offers_raw": offers,       # full API response data
+            "offers_extracted": extracted  # clean structured summary
         }
 
     except requests.HTTPError as e:
@@ -146,45 +178,89 @@ def get_flight_offers(departure_city: str, arrival_city: str, travel_date: str) 
 
 
 @tool
-def get_hotels_tool(city: str, check_in: str, check_out: str, adults: int = 2):
+def get_hotels_tool(city: str, check_in: str, check_out: str, adults: int = 2,
+                    hotel_class: str = None, min_price: int = None, max_price: int = None):
     """
-    LangChain tool to fetch hotel data using SerpApi Google Hotels API.
-    Reads the API key from the environment inside the function.
-    Args:
-        city (str): City name
-        check_in (str): Check-in date YYYY-MM-DD
-        check_out (str): Check-out date YYYY-MM-DD
-        adults (int): Number of adults
-    Returns:
-        str: Formatted top hotel results
+    Fetch hotel properties from SerpAPI Google Hotels.
+    Returns a concise list of top hotels with only available information.
     """
-    # Get the API key inside the function
+
     SERP_API_KEY = os.getenv("SERP_API_KEY")
     if not SERP_API_KEY:
-        return "Error: SERP_API_KEY not found in environment variables."
+        return {"error": "SERP_API_KEY not found in environment variables."}
 
-    url = f"https://serpapi.com/search?engine=google_hotels&q={city}&check_in_date={check_in}&check_out_date={check_out}&adults={adults}&api_key={SERP_API_KEY}"
-    
-    try:
-        response = requests.get(url)
-        if response.status_code != 200:
-            return f"Error: Received status {response.status_code} - {response.text}"
+    base_url = "https://serpapi.com/search"
 
-        data = response.json()
-        if "properties" not in data:
-            return "No hotel properties found in the response."
+    def fetch(params):
+        try:
+            response = requests.get(base_url, params=params)
+            if response.status_code != 200:
+                return {"error": f"Received status {response.status_code} - {response.text}"}, None
 
-        results = []
-        for i, hotel in enumerate(data['properties'][:10]):  # top 10 hotels
-            name = hotel.get('name', 'N/A')
-            rating = hotel.get('overall_rating', 'N/A')
-            reviews = hotel.get('reviews', 0)
-            price = hotel.get('rate_per_night', {}).get('lowest', 'N/A')
-            results.append(f"{i+1}. {name} - Rating: {rating} ({reviews} reviews) - Price per night: {price}")
-        
-        return "\n".join(results)
-    except Exception as e:
-        return f"Exception occurred: {e}"
+            data = response.json()
+            properties = data.get("properties", [])
+            if not properties:
+                return None, data
+
+            results = []
+            for hotel in properties[:10]:  # Top 10 hotels
+                hotel_data = {}
+                if hotel.get("name"):
+                    hotel_data["name"] = hotel["name"]
+                if hotel.get("star_rating"):
+                    hotel_data["star_rating"] = hotel["star_rating"]
+                if hotel.get("overall_rating"):
+                    hotel_data["overall_rating"] = hotel["overall_rating"]
+                if hotel.get("rate_per_night", {}).get("lowest"):
+                    hotel_data["price_per_night"] = hotel["rate_per_night"]["lowest"]
+                if hotel.get("address"):
+                    hotel_data["address"] = hotel["address"]
+                if hotel.get("booking_url"):
+                    hotel_data["booking_url"] = hotel["booking_url"]
+
+                if hotel_data:  # Only add hotels with at least one field
+                    results.append(hotel_data)
+
+            return results, data
+        except Exception as e:
+            return {"error": f"Exception occurred: {e}"}, None
+
+    # Base parameters
+    params = {
+        "engine": "google_hotels",
+        "q": city,
+        "check_in_date": check_in,
+        "check_out_date": check_out,
+        "adults": adults,
+        "api_key": SERP_API_KEY,
+    }
+    if hotel_class:
+        params["hotel_class"] = hotel_class
+    if min_price:
+        params["min_price"] = min_price
+    if max_price:
+        params["max_price"] = max_price
+
+    # First attempt with all filters
+    result, _ = fetch(params)
+    if result:
+        return result
+
+    # Fallback: drop price filters
+    if min_price or max_price:
+        params.pop("min_price", None)
+        params.pop("max_price", None)
+        result, _ = fetch(params)
+        if result:
+            return {"warning": f"No matches in given price range, showing available {hotel_class}-star hotels", "hotels": result}
+
+    # Fallback: drop hotel class
+    params.pop("hotel_class", None)
+    result, _ = fetch(params)
+    if result:
+        return {"warning": f"No matches for {hotel_class}-star hotels, showing all available hotels", "hotels": result}
+
+    return {"error": "No hotel properties found even after fallback."}
 
 
 @tool
