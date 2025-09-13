@@ -13,7 +13,6 @@ from typing import Any, TypedDict
 from typing_extensions import Annotated
 from langgraph.graph.message import add_messages
 import json
-from datetime import date
 from Guardrail.Visa_guardrail import *
 from Guardrail.weather_guardrail import *
 from Guardrail.flight_guardrail import *
@@ -115,8 +114,6 @@ class TripPlannerAgent:
         ]
     )
 
-        last_five = state["messages"][-1:] 
-
         research_agent = create_react_agent(
             model=self.llm_model,
             tools=[fetch_visa_info],
@@ -154,22 +151,21 @@ class TripPlannerAgent:
     def weather_node(self, state: AgentState) -> Command[Literal['supervisor']]:
         print("*****************called weather node************")
 
-        weather_context = {
-            "destination": state.get("destination"),
-            "trip_start_date": state.get("trip_start_date"),
-            "number_of_days": state.get("number_of_days"),
-        }
+       
+        destination= state.get("destination")
+        trip_start_date= state.get("trip_start_date")
+        number_of_days= state.get("number_of_days")
+        
+        weather_task_prompt = (
+        f"""Find the weather condition for this destination {destination} ,trip starting from {trip_start_date}
+        for {number_of_days} days by using the get_weather tool."""
+    )
+        print(f"--- Sending this direct task to the agent ---\n{weather_task_prompt}\n---------------------------------------------")
 
-        # Escape curly braces for f-string safety
-        state_json = json.dumps(weather_context, default=str, ensure_ascii=False) \
-            .replace("{", "{{").replace("}", "}}")
-
-        # Merge context + weather summarizer prompt
         system_prompt = ChatPromptTemplate.from_messages(
             [
                 (
-                    "system",
-                    f"Current full state (as JSON dict for reference): {state_json}\n\n" + weather_prompt_string
+                    "system", weather_prompt_string
                 ),
                 (
                     "user",
@@ -180,7 +176,7 @@ class TripPlannerAgent:
 
 
         # Keep conversation short
-        last_five = state["messages"][-1:]
+        #last_five = state["messages"][-1:]
 
         # Run weather agent
         weather_agent = create_react_agent(
@@ -188,7 +184,7 @@ class TripPlannerAgent:
             tools=[get_weather], 
             prompt=system_prompt
         )
-        result = weather_agent.invoke({"messages": last_five})
+        result = weather_agent.invoke({"messages": weather_task_prompt})
 
         # Extract JSON tool output
         if "intermediate_steps" in result:
@@ -216,27 +212,19 @@ class TripPlannerAgent:
     def flight_node(self, state: AgentState) -> Command[Literal['supervisor']]:
         print("*****************called flight node************")
 
-        flight_context = {
-            "departure": state.get("departure"),
-            "destination": state.get("destination"),
-            "trip_start_date": state.get("trip_start_date"),
-            "number_of_days": state.get("number_of_days"),
-        }
+        
+        departure= state.get("departure")
+        destination= state.get("destination")
+        trip_start_date= state.get("trip_start_date")
 
-        # Keep context lean – no giant prompt string injected here
-        state_json = json.dumps(flight_context, default=str, ensure_ascii=False) \
-            .replace("{", "{{").replace("}", "}}")
-
+        flight_task_prompt = f""" Find the available flights from {departure} to {destination} for {trip_start_date}"""
+        
         # Simple system prompt like weather_node
         system_prompt = ChatPromptTemplate.from_messages([
-            ("system", f"Current full state (as JSON dict for reference): {state_json}"+ flight_prompt_string),
+            ("system",flight_prompt_string),
             ("user", "{messages}")
         ])
 
-        # Trim history aggressively
-        last_five = state["messages"][-1:]
-
-        # Run flight agent with just the tool and context
         flight_agent = create_react_agent(
             model=self.llm_model,
             tools=[get_flight_offers],
@@ -244,7 +232,7 @@ class TripPlannerAgent:
         )
         result = flight_agent.invoke({
     "messages": [
-        HumanMessage(content=f"Flight search context: {flight_context}")
+        HumanMessage(content=f"Flight search context: {flight_task_prompt}")
     ]
 })
 
@@ -275,21 +263,17 @@ class TripPlannerAgent:
     def hotel_node(self,state:AgentState) -> Command[Literal['supervisor']]:
         print("*****************called hotel node************")
 
-        hotel_context = {
-        "destination": state.get("destination"),
-        "departure": state.get("departure"),
-        "number_of_days": state.get("number_of_days"),
-        "trip_start_date": state.get("trip_start_date"),
-    }
+  
+        destination=state.get("destination")
+        number_of_days=state.get("number_of_days")
+        trip_start_date=state.get("trip_start_date")
 
-    # dump only these
-        state_json = json.dumps(hotel_context, default=str).replace("{", "{{").replace("}", "}}")
+        hotel_task_prompt = f"""Find available hotels in {destination} for {number_of_days} days starting from {trip_start_date}"""
                        
         system_prompt = ChatPromptTemplate.from_messages(
         [
             (
-                "system",
-                f"Current full state (as JSON dict for reference): {state_json}\n\n" + hotel_prompt_string
+                "system",hotel_prompt_string
             ),
             (
                 "user",
@@ -297,13 +281,11 @@ class TripPlannerAgent:
             ),
         ]
     )
-        
-        last_five = state["messages"][-1:] 
 
         hotel_agent = create_react_agent(model=self.llm_model,tools=[get_hotels_tool] ,prompt=system_prompt)
         
         result = hotel_agent.invoke({
-        "messages": last_five
+        "messages": hotel_task_prompt
     })
         tool_output = None
         if "intermediate_steps" in result:
@@ -332,20 +314,16 @@ class TripPlannerAgent:
     def activities_node(self,state:AgentState) -> Command[Literal['supervisor']]:
         print("*****************called activities node************")
 
-        activities_context = {
-        "departure": state.get("departure"),
-        "number_of_days": state.get("number_of_days"),
-        "trip_start_date": state.get("trip_start_date"),
-    }
+        destination=state.get("destination")
+        number_of_days=state.get("number_of_days")
+        trip_start_date=state.get("trip_start_date")
 
-    # dump only these
-        state_json = json.dumps(activities_context, default=str).replace("{", "{{").replace("}", "}}")
+        activities_task_prompt = f"""Find activities in {destination} for {number_of_days} days starting from {trip_start_date}"""    
                        
         system_prompt = ChatPromptTemplate.from_messages(
         [
             (
-                "system",
-                f"Current full state (as JSON dict for reference): {state_json}\n\n" + activities_prompt_string
+                "system",activities_prompt_string
             ),
             (
                 "user",
@@ -353,13 +331,11 @@ class TripPlannerAgent:
             ),
         ]
     )
-        
-        last_five = state["messages"][-1:]
 
         activities_agent = create_react_agent(model=self.llm_model,tools=[get_activities_opentripmap] ,prompt=system_prompt)
         
         result = activities_agent.invoke({
-        "messages": last_five
+        "messages": activities_task_prompt
     })
         tool_output = None
         if "intermediate_steps" in result:
@@ -389,27 +365,32 @@ class TripPlannerAgent:
     def itinerary_node(self, state: AgentState) -> Command[Literal['supervisor']]:
         print("*****************called itinerary node************")
 
-        itinerary_context = {
-        "research" : state.get("research"),
-        "weather" : state.get("weather"),
-        "hotel" : state.get("hotel"),
-        "activities" : state.get("activities"),
-        "destination": state.get("destination"),
-        "departure": state.get("departure"),
-        "number_of_days": state.get("number_of_days"),
-        "trip_start_date": state.get("trip_start_date"),
-        "flight" : state.get("flight"),
-        "number_of_people": state.get("number_of_people")
-    }
+        research= state.get("research")
+        weather=state.get("weather")
+        hotel=state.get("hotel")
+        activities= state.get("activities")
+        destination=state.get("destination")
+        departure=state.get("departure")
+        number_of_days=state.get("number_of_days")
+        trip_start_date=state.get("trip_start_date")
+        flight=state.get("flight")
 
-    # dump only these
-        state_json = json.dumps(itinerary_context, default=str).replace("{", "{{").replace("}", "}}")
+        itinerary_task_prompt = f"""
+        Prepare a travel itinerary. 
 
+        Start by giving visa and entry details based on: {research}.  
+        Then describe the expected weather: {weather}.  
+        After that, suggest flights from {departure} to {destination} on {trip_start_date}: {flight}.  
+        Next, recommend hotels to check in: {hotel}.  
+        Finally, plan day-by-day activities for {number_of_days} days using: {activities}.  
+
+        End with a short summary of the trip.
+        """
+        
         system_prompt = ChatPromptTemplate.from_messages(
             [
                 (
-                    "system",
-                    f"Current full state (as JSON dict for reference): {state_json}\n\n" + itinerary_prompt_string
+                    "system",itinerary_prompt_string
                 ),
                 (
                     "user",
@@ -418,18 +399,15 @@ class TripPlannerAgent:
             ]
         )
 
-        # Use last few messages to keep context light
-        last_five = state["messages"][-1:]
-
         # Replace tool with itinerary generator (if you have one)
         itinerary_agent = create_react_agent(
             model=self.llm_model,
-            tools=[],   # or [generate_itinerary] if you wire it as a tool
+            tools=[],
             prompt=system_prompt
         )
 
         result = itinerary_agent.invoke({
-            "messages": last_five
+            "messages": itinerary_task_prompt
         })
 
         tool_output = None
