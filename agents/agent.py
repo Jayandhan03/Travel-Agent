@@ -174,11 +174,6 @@ class TripPlannerAgent:
             ]
         )
 
-
-        # Keep conversation short
-        #last_five = state["messages"][-1:]
-
-        # Run weather agent
         weather_agent = create_react_agent(
             model=self.llm_model,
             tools=[get_weather], 
@@ -296,7 +291,7 @@ class TripPlannerAgent:
             tool_output = result["messages"][-1].content
 
         # 🔑 Summarize JSON output with schema guardrail
-        parsed = summarize_flight_output(tool_output, self.llm_model)
+        parsed = summarize_hotel_output(tool_output, self.llm_model)
         
         return Command(
     update={
@@ -361,7 +356,6 @@ class TripPlannerAgent:
     goto="supervisor",
 )
     
-
     def itinerary_node(self, state: AgentState) -> Command[Literal['supervisor']]:
         print("*****************called itinerary node************")
 

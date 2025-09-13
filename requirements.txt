@@ -4,3 +4,4 @@ python-dotenv
 pycountry
 geopy
 google-generativeai
+streamlit
