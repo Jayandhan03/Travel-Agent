@@ -10,9 +10,11 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 1️⃣ Checkout your repo
+      # 1️⃣ Checkout your repo (full history, not shallow)
       - name: Checkout code
         uses: actions/checkout@v3
+        with:
+          fetch-depth: 0   # Important: disable shallow clone
 
       # 2️⃣ Set up Python
       - name: Set up Python
@@ -20,28 +22,28 @@ jobs:
         with:
           python-version: "3.11"
 
-      # 3️⃣ Install dependencies (just for validation, HF will also install them)
+      # 3️⃣ Install dependencies
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      # 4️⃣ Configure Git for HF push
+      # 4️⃣ Configure Git
       - name: Configure Git
         run: |
           git config --global user.email "action@github.com"
           git config --global user.name "GitHub Actions"
 
-      # 5️⃣ Push to Hugging Face Space
+      # 5️⃣ Push to HF Space
       - name: Push to Hugging Face Space
         env:
           HF_API_TOKEN: ${{ secrets.HF_API_TOKEN }}
         run: |
-          # Remove remote if it already exists
+          # Remove old remote if exists
           git remote remove hf || true
           
-          # Add Hugging Face remote using API token
-          git remote add hf https://user:${HF_API_TOKEN}@huggingface.co/spaces/Jayandhan/trip-planner
+          # Add HF remote with auth
+          git remote add hf https://user:$HF_API_TOKEN@huggingface.co/spaces/Jayandhan/trip-planner
           
-          # Push main branch to Hugging Face Space
+          # Push with force if needed
           git push hf main --force
