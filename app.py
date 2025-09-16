@@ -7,7 +7,7 @@ from langgraph.types import Command
 def build_graph(agent: TripPlannerAgent):
     graph = StateGraph(AgentState)
 
-    # Add actual implemented nodes
+    # Add actual implemented nodess
     graph.add_node("supervisor", agent.supervisor_node)
     graph.add_node("research_node", agent.research_node)
     graph.add_node("weather_node", agent.weather_node)
