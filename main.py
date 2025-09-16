@@ -5,7 +5,7 @@ from langgraph.types import Command
 def main():
     agent = TripPlannerAgent()
 
-    # 1️⃣ Gather input from the user
+    # 1️⃣ Gather input from the userrs
     user_input = {
         "number_of_days": int(input("Enter number of days for the trip: ")),
         "destination": input("Enter destination city: "),
