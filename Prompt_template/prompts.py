@@ -18,11 +18,7 @@ ROUTING RULES (strict order):
 4. ELSE if "hotel" is INCOMPLETE → route to "hotel_node".
 5. ELSE if "activities" is INCOMPLETE → route to "activities_node".
 6. ELSE if "itinerary" is INCOMPLETE → route to "itinerary_node".
-7. ELSE → route to "human_feedback_node".
-
-At "human_feedback_node":
-- If user confirms itinerary is correct → route to "END".
-- If user asks for alternatives or refinements → route back to the specific node requested (hotel_node, flight_node, or activities_node).
+7. ELSE → route to "__end__".
 
 OUTPUT FORMAT:
 Return ONLY a JSON object with exactly two fields:

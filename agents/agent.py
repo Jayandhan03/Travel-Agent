@@ -81,8 +81,8 @@ class TripPlannerAgent:
         print("********************************")
         print(response["reasoning"])
             
-        if goto == "FINISH":
-            goto = END
+        if goto == "END":
+            goto = "__end__" 
             
         print("**************************below is my state****************************")
         print(state)
