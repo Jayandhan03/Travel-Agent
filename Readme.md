@@ -44,11 +44,11 @@ The core of the application is a graph where each node is a specialized agent (a
 graph TD
     A[User Input via Streamlit UI] --> B{Supervisor Agent};
     B --> C{Decide Next Step};
-    C --> D[Research Agent <br> (Visa, general info)];
-    C --> E[Flight Agent <br> (Finds flights)];
-    C --> F[Weather Agent <br> (Gets forecast)];
-    C --> G[Hotel Agent <br> (Finds hotels)];
-    C --> H[Activities Agent <br> (Suggests things to do)];
+    C --> D["Research Agent <br> (Visa, general info)"];
+    C --> E["Flight Agent <br> (Finds flights)"];
+    C --> F["Weather Agent <br> (Gets forecast)"];
+    C --> G["Hotel Agent <br> (Finds hotels)"];
+    C --> H["Activities Agent <br> (Suggests things to do)"];
     
     subgraph Worker Agents
         D; E; F; G; H;
@@ -60,7 +60,7 @@ graph TD
     G --> B;
     H --> B;
 
-    C --> I[Itinerary Agent <br> (Synthesizes all data)];
+    C --> I["Itinerary Agent <br> (Synthesizes all data)"];
     I --> J[✅ Final Plan];
     J --> K[Display in Streamlit];
 
@@ -71,14 +71,10 @@ graph TD
 ```
 
 1.  **User Input**: The user provides trip details through the Streamlit interface.
-2.  **Supervisor Agent**: This is the "team lead." It maintains the current state of the plan (what information has been gathered, what is missing) and decides which agent to call next.
-3.  **Specialist Agents**: Each worker agent has a specific tool and responsibility:
-    -   `research_node`: Uses Google Search to find visa information.
-    -   `flight_node`: Uses the SerpApi Flight Search tool.
-    -   `hotel_node`: Uses the SerpApi Hotel Search tool.
-    -   And so on for weather and activities.
+2.  **Supervisor Agent**: This is the "team lead." It maintains the current state of the plan and decides which agent to call next.
+3.  **Specialist Agents**: Each worker agent has a specific tool and responsibility (e.g., finding flights, checking the weather).
 4.  **Stateful Execution**: After each agent completes its task, it updates the shared state, and control returns to the supervisor.
-5.  **Itinerary Agent**: Once the supervisor determines that all necessary information has been collected, it calls the final agent. This agent reviews all the gathered data (flights, hotels, weather, etc.) and uses its LLM capabilities to write a cohesive, day-by-day itinerary.
+5.  **Itinerary Agent**: Once all necessary information is collected, this final agent reviews all the data and writes a cohesive, day-by-day itinerary.
 6.  **Final Output**: The formatted itinerary is passed back to the Streamlit UI for the user to see.
 
 ---
@@ -122,8 +118,7 @@ python-dotenv
 
 Then install them:
 ```bash
-pip install -r requirements.txt
-```
+pip install -r requirements.txt```
 
 ### 4. Set Up Environment Variables
 You will need API keys for Google Gemini and SerpApi. Create a file named `.env` in the root of your project and add your keys:
