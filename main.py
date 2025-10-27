@@ -1,6 +1,5 @@
 from langgraph.graph import START, StateGraph, END
 from agents.agent import TripPlannerAgent, AgentState
-from langgraph.types import Command
 
 def main():
     agent = TripPlannerAgent()
@@ -12,14 +11,14 @@ def main():
         "departure": input("Enter departure city: "),
         "trip_start_date": input("Enter trip start date (YYYY-MM-DD): "),
         "number_of_people": int(input("Enter number of people: ")),
-        # initialize empty fields for later
+        
         "messages": [],
-        "research": {},
-        "weather": {},
-        "flight": {},
-        "hotel": {},
-        "activities": {},
-        "itinerary": {},
+        "research": [],
+        "weather": [],
+        "flight": [],
+        "hotel": [],
+        "activities": [],
+        "itinerary": [],
         "next": "",
         "current_reasoning": ""
     }
@@ -36,13 +35,8 @@ def main():
     graph.add_node("flight_node", agent.flight_node)
     graph.add_node("hotel_node", agent.hotel_node)
     graph.add_node("activities_node", agent.activities_node)
-    graph.add_node("human_feedback_node", agent.human_feedback_node)
     graph.add_node("itinerary_node", agent.itinerary_node)
 
-    # Stub the rest of the nodes to satisfy Router literals
-    def stub_node(state: AgentState) -> Command:
-        return Command(goto=END)  # just finish if ever called
-    # Edge from START to supervisor
     graph.add_edge(START, "supervisor")
 
     # Compile workflow

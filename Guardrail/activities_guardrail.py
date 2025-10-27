@@ -1,7 +1,6 @@
 from langchain.output_parsers import PydanticOutputParser
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from langchain.prompts import ChatPromptTemplate
-from typing import List, Optional
 
 # 1️⃣ Define Activity-specific schema
 class Activity(BaseModel):

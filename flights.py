@@ -108,7 +108,7 @@ def get_flight_offers(
 
 # Example usage
 if __name__ == "__main__":
-    flights = get_flight_offers("DEL", "BOM", "2025-09-09", travel_class="BUSINESS")
+    flights = get_flight_offers("DEL", "BOM", "2025-10-27", travel_class="BUSINESS")
     from pprint import pprint
     if "offers_extracted" in flights:
         pprint(flights["offers_extracted"])

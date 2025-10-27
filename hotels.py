@@ -90,6 +90,6 @@ def get_hotels_tool(city: str, check_in: str, check_out: str, adults: int = 2,
 
 # Example usage
 if __name__ == "__main__":
-    hotels = get_hotels_tool("Mumbai", "2025-09-09", "2025-09-12", adults=2, hotel_class="5", min_price=3000, max_price=7000)
+    hotels = get_hotels_tool("Mumbai", "2025-10-27", "2025-10-30", adults=2, hotel_class="5", min_price=3000, max_price=7000)
     from pprint import pprint
     pprint(hotels)
