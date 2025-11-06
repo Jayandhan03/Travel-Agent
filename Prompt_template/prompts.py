@@ -52,7 +52,7 @@ Today's date : {today}
 flight_prompt_string = """ 
                 You are a flight information fetching agent.
                 Your sole task:
-                Find the three digit IAA codes for the departure and destination locations .
+                You must first Find the three digit IAA codes for the departure and destination locations .
                 1. Call the tool `get_flight_offers` with the correct departure and destination codes for the places 
                 IDs for the given date.
                 2. only  Output the information returned by the tool."""
